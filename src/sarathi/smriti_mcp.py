@@ -4,6 +4,7 @@ import json
 import sys
 from typing import Any
 
+from .profiles import resolve_profile
 from .smriti_client import SmritiClient
 
 
@@ -52,13 +53,21 @@ def handle(message: dict[str, Any], client: SmritiClient | None) -> dict[str, An
     if request_id is None:
         return None
     if method == "initialize":
-        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "sarathi-smriti", "version": "0.1.0"}}}
+        return {"jsonrpc": "2.0", "id": request_id, "result": {"protocolVersion": "2025-06-18", "capabilities": {"tools": {}}, "serverInfo": {"name": "sarathi-smriti", "version": "0.2.1"}}}
     if method == "tools/list":
         return {"jsonrpc": "2.0", "id": request_id, "result": {"tools": TOOLS}}
     if method != "tools/call":
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32601, "message": "method not found"}}
     if client is None:
-        return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32000, "message": "SMRITI_URL is not configured"}}
+        profile = resolve_profile()
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "error": {
+                "code": -32000,
+                "message": f"SMRITI_{profile.upper()}_URL is not configured",
+            },
+        }
     params = message.get("params", {})
     name = params.get("name")
     args = params.get("arguments", {})
@@ -74,7 +83,7 @@ def handle(message: dict[str, Any], client: SmritiClient | None) -> dict[str, An
 
 
 def main() -> int:
-    client = SmritiClient.from_environment()
+    client = SmritiClient.from_environment(resolve_profile())
     for line in sys.stdin:
         try:
             response = handle(json.loads(line), client)

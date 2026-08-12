@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .controller import Controller
+from .profiles import PROFILES, resolve_profile, workspace_profile
 
 
 def _task_json(task: Any) -> str:
@@ -15,7 +16,15 @@ def _task_json(task: Any) -> str:
 
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="sarathi", description="Local task workspace controller")
+    root.add_argument(
+        "--profile",
+        choices=PROFILES,
+        help="isolated personal, work, or neutral context (default: SARATHI_PROFILE or neutral)",
+    )
     sub = root.add_subparsers(dest="command", required=True)
+
+    profile_cmd = sub.add_parser("profile", help="show the selected isolated context")
+    profile_cmd.add_argument("--json", action="store_true")
 
     open_cmd = sub.add_parser("open", help="create or focus a task workspace")
     open_cmd.add_argument("workspace", nargs="?", default=".")
@@ -74,9 +83,20 @@ def parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = parser().parse_args(argv)
-    controller = Controller()
     try:
-        if args.command == "open":
+        requested_profile = args.profile
+        if args.command == "open" and not requested_profile:
+            requested_profile = workspace_profile(Path(args.workspace))
+        profile = resolve_profile(requested_profile)
+        controller = Controller(profile=profile)
+        if args.command == "profile":
+            payload = {
+                "profile": profile,
+                "state": str(controller.registry.path.parent),
+                "smriti_configured": controller.smriti is not None,
+            }
+            print(json.dumps(payload, indent=2, sort_keys=True) if args.json else profile)
+        elif args.command == "open":
             task = controller.create_task(Path(args.workspace), args.intent)
             if not args.no_emacs:
                 controller.open_emacs(task, agent=args.agent)
@@ -105,13 +125,20 @@ def main(argv: list[str] | None = None) -> int:
                 extra_args=tuple(args.extra_arg),
                 allow_unsafe_once=args.allow_unsafe_once,
             )
-            payload = {"command": list(plan.command), "session": plan.session.__dict__ if hasattr(plan.session, "__dict__") else {
-                field: getattr(plan.session, field) for field in plan.session.__dataclass_fields__
-            }}
+            payload = {
+                "command": list(plan.command),
+                "environment": plan.environment,
+                "session": plan.session.__dict__ if hasattr(plan.session, "__dict__") else {
+                    field: getattr(plan.session, field) for field in plan.session.__dataclass_fields__
+                },
+            }
             print(json.dumps(payload, sort_keys=True) if args.json else plan.shell_preview())
         elif args.command == "resume-command":
             plan = controller.resume_agent(args.task_id, args.session_id)
-            print(json.dumps({"command": list(plan.command)}, sort_keys=True) if args.json else plan.shell_preview())
+            print(
+                json.dumps({"command": list(plan.command), "environment": plan.environment}, sort_keys=True)
+                if args.json else plan.shell_preview()
+            )
         elif args.command == "capture":
             print(json.dumps(controller.capture_evidence(args.task_id, args.kind, args.summary, args.source), indent=2, sort_keys=True))
         elif args.command == "complete":

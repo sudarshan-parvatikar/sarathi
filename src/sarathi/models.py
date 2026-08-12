@@ -30,6 +30,7 @@ class Task:
     short_id: str
     title: str
     workspace: str
+    profile: str = "neutral"
     intent: str = ""
     automatic_renames: int = 0
     manual_name_locked: bool = False

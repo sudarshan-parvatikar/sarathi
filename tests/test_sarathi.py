@@ -7,10 +7,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from sarathi.adapters import UNSAFE_FLAGS, build_launch_plan
 from sarathi.controller import Controller, RenameLimitError
 from sarathi.registry import Registry
+from sarathi.smriti_client import SmritiClient
 from sarathi.smriti_mcp import handle
 from sarathi.smriti_client import SmritiUnavailable
 
@@ -80,13 +82,26 @@ class RegistryAndNamingTests(unittest.TestCase):
         self.assertFalse((root / "transcript.jsonl").exists())
         payload = json.loads((root / "task.json").read_text())
         self.assertEqual(task.title, payload["title"])
+        self.assertEqual("neutral", payload["profile"])
+        self.assertEqual("neutral", (root / "profile").read_text().strip())
         self.assertEqual(0o600, self.registry.path.stat().st_mode & 0o777)
+
+    def test_workspace_cannot_cross_personal_and_work_profiles(self) -> None:
+        personal_registry = Registry(Path(self.temp.name) / "personal.json", profile="personal")
+        personal = Controller(personal_registry, self.smriti, self.codex)
+        task = personal.create_task(self.workspace, "Keep personal work isolated")
+        self.assertEqual("personal", task.profile)
+        work_registry = Registry(Path(self.temp.name) / "work.json", profile="work")
+        work = Controller(work_registry, self.smriti, self.codex)
+        with self.assertRaisesRegex(ValueError, "workspace belongs to 'personal'"):
+            work.create_task(self.workspace, "Do not cross the boundary")
 
     def test_codex_session_preserves_thread_and_receives_rename(self) -> None:
         task = self.controller.create_task(self.workspace, "Build exact cache validation")
         plan = self.controller.prepare_agent(task.id, "codex")
         self.assertEqual("thr_synthetic", plan.session.native_id)
         self.assertIn("workspace-write", plan.command)
+        self.assertEqual({"SARATHI_PROFILE": "neutral"}, plan.environment)
         self.assertIn(("thr_synthetic", task.title), self.codex.names)
         changed = self.controller.rename(task.id, "Validate unchanged inference cache", major_intent_change=True)
         self.assertIn(("thr_synthetic", changed.title), self.codex.names)
@@ -158,13 +173,37 @@ class McpTests(unittest.TestCase):
         )
         self.assertIn("error", result)
 
+    def test_smriti_endpoints_are_selected_without_cross_profile_fallback(self) -> None:
+        environment = {
+            "SMRITI_WORK_URL": "https://work-smriti.invalid",
+            "SMRITI_PERSONAL_URL": "https://personal-smriti.invalid",
+            "SMRITI_NEUTRAL_URL": "https://neutral-smriti.invalid",
+        }
+        with patch.dict(os.environ, environment, clear=True):
+            self.assertEqual("https://work-smriti.invalid", SmritiClient.from_environment("work").base_url)
+            self.assertEqual(
+                "SMRITI_WORK_TOKEN",
+                SmritiClient.from_environment("work").token_env,
+            )
+            self.assertEqual(
+                "https://personal-smriti.invalid",
+                SmritiClient.from_environment("personal").base_url,
+            )
+            self.assertIsNone(SmritiClient.from_environment("neutral"))
+        with patch.dict(os.environ, {"SMRITI_URL": "https://generic.invalid"}, clear=True):
+            self.assertIsNone(SmritiClient.from_environment("work"))
+            self.assertIsNone(SmritiClient.from_environment("personal"))
+
 
 class BootstrapTests(unittest.TestCase):
     def test_neutral_dry_run_is_non_mutating_and_repeatable(self) -> None:
         script = Path(__file__).parents[1] / "scripts" / "bootstrap"
         env = dict(os.environ)
         env["PATH"] = ""
-        command = [sys.executable, str(script), "--identity", "neutral", "--roles", "base", "--dry-run"]
+        command = [
+            sys.executable, str(script), "--identity", "neutral", "--roles", "base",
+            "--skip-agent-plugins", "--dry-run",
+        ]
         first = subprocess.run(command, capture_output=True, text=True, env=env, check=True)
         second = subprocess.run(command, capture_output=True, text=True, env=env, check=True)
         self.assertEqual(json.loads(first.stdout), json.loads(second.stdout))
@@ -175,15 +214,27 @@ class BootstrapTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as prefix:
             command = [
                 sys.executable, str(script), "--identity", "neutral", "--roles", "base",
-                "--prefix", prefix, "--apply",
+                "--prefix", prefix, "--skip-agent-plugins", "--apply",
             ]
             applied = subprocess.run(command, capture_output=True, text=True, check=True)
             self.assertEqual("installed", json.loads(applied.stdout)["actions"][0]["status"])
             wrapper = Path(prefix) / "bin" / "sarathi"
             self.assertTrue(wrapper.exists())
             self.assertEqual(0, subprocess.run([str(wrapper), "--help"], capture_output=True).returncode)
+            selected = subprocess.run([str(wrapper), "profile"], capture_output=True, text=True, check=True)
+            self.assertEqual("neutral", selected.stdout.strip())
             checked = subprocess.run(command[:-1] + ["--dry-run"], capture_output=True, text=True, check=True)
             self.assertEqual("present-current", json.loads(checked.stdout)["actions"][0]["status"])
+
+    def test_one_shared_plugin_is_listed_in_both_marketplaces(self) -> None:
+        root = Path(__file__).parents[1]
+        plugin = root / "plugins" / "sarathi"
+        codex_marketplace = json.loads((root / ".agents" / "plugins" / "marketplace.json").read_text())
+        claude_marketplace = json.loads((root / ".claude-plugin" / "marketplace.json").read_text())
+        self.assertTrue((plugin / ".codex-plugin" / "plugin.json").is_file())
+        self.assertTrue((plugin / ".claude-plugin" / "plugin.json").is_file())
+        self.assertEqual("./plugins/sarathi", codex_marketplace["plugins"][0]["source"]["path"])
+        self.assertEqual("./plugins/sarathi", claude_marketplace["plugins"][0]["source"])
 
 
 if __name__ == "__main__":

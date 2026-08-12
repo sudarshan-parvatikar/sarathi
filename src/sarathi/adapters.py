@@ -5,6 +5,7 @@ import uuid
 from dataclasses import dataclass
 
 from .models import AgentSession, Task
+from .profiles import profile_environment
 
 
 UNSAFE_FLAGS = {
@@ -20,9 +21,10 @@ UNSAFE_FLAGS = {
 class LaunchPlan:
     command: tuple[str, ...]
     session: AgentSession
+    environment: dict[str, str]
 
     def shell_preview(self) -> str:
-        return shlex.join(self.command)
+        return shlex.join(("env", *(f"{key}={value}" for key, value in self.environment.items()), *self.command))
 
 
 def ensure_safe_args(args: list[str] | tuple[str, ...], allow_unsafe_once: bool = False) -> None:
@@ -67,6 +69,7 @@ def build_launch_plan(
             native_id=native_id,
             title=task.title,
         ),
+        environment=profile_environment(task.profile),
     )
 
 
@@ -84,4 +87,4 @@ def build_resume_plan(task: Task, session: AgentSession) -> LaunchPlan:
         command = ("agy", "--sandbox", "--mode", "accept-edits")
     else:
         raise ValueError(f"session {session.registry_id} cannot be resumed")
-    return LaunchPlan(command=command, session=session)
+    return LaunchPlan(command=command, session=session, environment=profile_environment(task.profile))

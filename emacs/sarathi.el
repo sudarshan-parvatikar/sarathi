@@ -18,6 +18,17 @@
 (defvar-local sarathi-task-id nil)
 (defvar-local sarathi-agent nil)
 
+(defun sarathi--profile-environment (profile)
+  "Return a process environment selecting PROFILE exactly once."
+  (cons (format "SARATHI_PROFILE=%s" profile)
+        (seq-remove (lambda (value) (string-prefix-p "SARATHI_PROFILE=" value))
+                    process-environment)))
+
+(defun sarathi--task-profile (task-id)
+  "Return the immutable profile registered for TASK-ID."
+  (or (plist-get (gethash task-id sarathi--tasks) :profile)
+      (error "No Sarathi profile registered for task %s" task-id)))
+
 (defun sarathi--label (task-id title)
   (format "%s [%s]" title (substring task-id 0 (min 8 (length task-id)))))
 
@@ -46,11 +57,12 @@
 (defun sarathi--flagged-values (flag values)
   (apply #'append (mapcar (lambda (value) (list flag value)) values)))
 
-(defun sarathi-open-task (task-id workspace title)
-  "Open or focus TASK-ID at WORKSPACE with TITLE."
-  (interactive "sTask id: \nDWorkspace: \nsTitle: ")
+(defun sarathi-open-task (task-id workspace title profile)
+  "Open or focus TASK-ID at WORKSPACE with TITLE in PROFILE."
+  (interactive "sTask id: \nDWorkspace: \nsTitle: \nsProfile: ")
   (let ((label (sarathi--label task-id title)))
-    (puthash task-id (list :workspace workspace :title title) sarathi--tasks)
+    (puthash task-id (list :workspace workspace :title title :profile profile)
+             sarathi--tasks)
     (sarathi--ensure-tab label)
     (setq default-directory (file-name-as-directory workspace))
     (find-file (expand-file-name ".sarathi/context.md" workspace))
@@ -71,9 +83,11 @@
   (interactive
    (list (read-string "Task id: ")
          (completing-read "Agent: " '("claude" "codex" "agy") nil t)))
-  (let* ((payload (sarathi--cli-json "agent-command" task-id agent "--json"))
+  (let* ((task (gethash task-id sarathi--tasks))
+         (profile (sarathi--task-profile task-id))
+         (process-environment (sarathi--profile-environment profile))
+         (payload (sarathi--cli-json "agent-command" task-id agent "--json"))
          (command (alist-get 'command payload))
-         (task (gethash task-id sarathi--tasks))
          (title (or (plist-get task :title) "task"))
          (buffer-name (sarathi--agent-buffer-name agent task-id title))
          (buffer (get-buffer-create buffer-name)))
@@ -83,12 +97,14 @@
       (setq-local sarathi-task-id task-id)
       (setq-local sarathi-agent agent))
     (pop-to-buffer buffer)
-    (message "Started %s without keystroke injection" agent)))
+    (message "Started %s in %s profile without keystroke injection" agent profile)))
 
 (defun sarathi-rename-task (task-id title)
   "Manually rename TASK-ID to TITLE and lock automatic naming."
   (interactive "sTask id: \nsNew title: ")
-  (let* ((payload (sarathi--cli-json "rename" task-id title))
+  (let* ((profile (sarathi--task-profile task-id))
+         (process-environment (sarathi--profile-environment profile))
+         (payload (sarathi--cli-json "rename" task-id title))
          (new-title (alist-get 'title payload))
          (label (sarathi--label task-id new-title)))
     (tab-bar-rename-tab label)
@@ -105,7 +121,9 @@
    (list (read-string "Task id: ")
          (completing-read "Kind: " '("change" "solution" "workaround" "learning" "decision" "feedback" "result") nil t)
          (read-string "Derived summary (no raw terminal/source content): ")))
-  (sarathi--cli-json "capture" task-id kind summary)
+  (let* ((profile (sarathi--task-profile task-id))
+         (process-environment (sarathi--profile-environment profile)))
+    (sarathi--cli-json "capture" task-id kind summary))
   (message "Evidence captured"))
 
 (defun sarathi-complete-task (task-id approach result workarounds workflow commands learnings links)
@@ -119,24 +137,28 @@
          (read-string "Redacted command summaries (semicolon separated): ")
          (read-string "Learnings (semicolon separated): ")
          (read-string "Confluence/runbook/artifact links (semicolon separated): ")))
-  (apply #'sarathi--cli-json
-         (append
-          (list "complete" task-id "--approach" approach "--result" result)
-          (sarathi--flagged-values "--workaround" (sarathi--split-values workarounds))
-          (sarathi--flagged-values "--workflow-step" (sarathi--split-values workflow))
-          (sarathi--flagged-values "--command-summary" (sarathi--split-values commands))
-          (sarathi--flagged-values "--learning" (sarathi--split-values learnings))
-          (sarathi--flagged-values "--link" (sarathi--split-values links))))
+  (let* ((profile (sarathi--task-profile task-id))
+         (process-environment (sarathi--profile-environment profile)))
+    (apply #'sarathi--cli-json
+           (append
+            (list "complete" task-id "--approach" approach "--result" result)
+            (sarathi--flagged-values "--workaround" (sarathi--split-values workarounds))
+            (sarathi--flagged-values "--workflow-step" (sarathi--split-values workflow))
+            (sarathi--flagged-values "--command-summary" (sarathi--split-values commands))
+            (sarathi--flagged-values "--learning" (sarathi--split-values learnings))
+            (sarathi--flagged-values "--link" (sarathi--split-values links)))))
   (message "Task completed with an immediate resolution record"))
 
-(defun sarathi-restore ()
-  "Restore registered workspaces after daemon restart."
-  (interactive)
-  (let ((tasks (sarathi--cli-json "list" "--json")))
+(defun sarathi-restore (profile)
+  "Restore PROFILE's registered workspaces after daemon restart."
+  (interactive (list (completing-read "Profile: " '("personal" "work" "neutral") nil t)))
+  (let* ((process-environment (sarathi--profile-environment profile))
+         (tasks (sarathi--cli-json "list" "--json")))
     (dolist (task (reverse tasks))
       (sarathi-open-task (alist-get 'id task)
                          (alist-get 'workspace task)
-                         (alist-get 'title task)))))
+                         (alist-get 'title task)
+                         (alist-get 'profile task)))))
 
 (provide 'sarathi)
 ;;; sarathi.el ends here

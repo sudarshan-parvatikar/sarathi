@@ -7,6 +7,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Any
 
+from .profiles import resolve_profile
+
 
 class SmritiUnavailable(RuntimeError):
     pass
@@ -17,11 +19,17 @@ class SmritiClient:
     base_url: str
     token_env: str = "SMRITI_TOKEN"
     timeout: float = 3.0
+    profile: str = "neutral"
 
     @classmethod
-    def from_environment(cls) -> "SmritiClient | None":
-        value = os.environ.get("SMRITI_URL", "").strip()
-        return cls(value.rstrip("/"), os.environ.get("SMRITI_TOKEN_ENV", "SMRITI_TOKEN")) if value else None
+    def from_environment(cls, profile: str | None = None) -> "SmritiClient | None":
+        selected = resolve_profile(profile)
+        if selected == "neutral":
+            return None
+        prefix = f"SMRITI_{selected.upper()}"
+        value = os.environ.get(f"{prefix}_URL", "").strip()
+        token_env = os.environ.get(f"{prefix}_TOKEN_ENV", f"{prefix}_TOKEN")
+        return cls(value.rstrip("/"), token_env, profile=selected) if value else None
 
     def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
         data = json.dumps(payload).encode() if payload is not None else None
@@ -45,14 +53,24 @@ class SmritiClient:
         return self.request(
             "PUT",
             f"/api/v1/tasks/{task.id}",
-            {"id": task.id, "title": task.title, "workspace": task.workspace, "source": "sarathi"},
+            {
+                "id": task.id,
+                "title": task.title,
+                "workspace": task.workspace,
+                "profile": task.profile,
+                "source": "sarathi",
+            },
         )
 
     def get_task(self, task_id: str) -> dict[str, Any]:
         return self.request("GET", f"/api/v1/tasks/{task_id}")
 
     def capture_evidence(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.request("POST", "/api/v1/evidence-events", payload)
+        return self.request("POST", "/api/v1/evidence-events", {**payload, "profile": self.profile})
 
     def put_handoff(self, task_id: str, payload: dict[str, Any]) -> dict[str, Any]:
-        return self.request("PUT", f"/api/v1/tasks/{task_id}/handoff", payload)
+        return self.request(
+            "PUT",
+            f"/api/v1/tasks/{task_id}/handoff",
+            {**payload, "profile": self.profile},
+        )

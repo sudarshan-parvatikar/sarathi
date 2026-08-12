@@ -1,9 +1,10 @@
 # Sarathi
 
 Sarathi is a public, local-first work controller: one durable task identity,
-one Emacs workspace, and resumable Claude, Codex, and Agy sessions. It keeps
-terminal control on the desktop and synchronizes only compact, redacted task
-state with an optional private Smriti instance.
+one Emacs workspace, and resumable Claude, Codex, and Agy sessions. The same
+plugin package works in Codex and Claude. It keeps terminal control on the
+desktop and synchronizes only compact, redacted task state with the matching
+optional private Smriti instance.
 
 ## What works in this foundation
 
@@ -18,13 +19,17 @@ state with an optional private Smriti instance.
 - Task directories hold context, handoff, and derived evidence files—never raw
   terminal output or transcripts. Failed Smriti writes remain as replayable,
   per-event outbox files and `sarathi sync` retries them.
-- The repository is also a Codex/Claude plugin with one canonical agent-neutral
-  skill and a small Smriti MCP bridge.
+- The repository is a marketplace for both Codex and Claude. Both install one
+  canonical agent-neutral plugin, skill, and small Smriti MCP bridge from
+  `plugins/sarathi`; there are no provider-specific copies to drift.
+- `personal`, `work`, and `neutral` profiles have separate registries, evidence
+  outboxes, child-agent environments, and Smriti configuration. A workspace is
+  permanently bound to one profile and cross-profile reuse is rejected.
 - Linux systemd-user and macOS LaunchAgent definitions are included but are not
   installed or enabled automatically.
-- Optional Bash/Zsh helpers (`sr`, `sarathi_here`, and `sarathi_done`) reuse the
-  canonical CLI; source `integrations/shell/sarathi.sh` only if those names do
-  not conflict with an existing shell setup.
+- Optional Bash/Zsh helpers include `sr`, `srp`, `srw`, `srn`, role functions,
+  `sarathi_here`, and `sarathi_done`. They reuse the canonical CLI; source
+  `integrations/shell/sarathi.sh` only if those names do not conflict.
 - [`BOOTSTRAP.md`](BOOTSTRAP.md) is the stable, provider-neutral machine setup
   entry point. The bootstrap script is dry-run by default and idempotent.
 
@@ -38,8 +43,28 @@ scripts/bootstrap --identity neutral --roles base --dry-run
 
 Install into an isolated environment with `pipx install .`, or use
 `python -m pip install --user .`. Then load `emacs/sarathi.el` from the Emacs
-daemon init file. Installation, service enablement, plugin enrollment, remote
-repository access, and Smriti authentication remain explicit operator actions.
+daemon init file. `scripts/bootstrap --apply` installs the local client,
+registers this repository's marketplace in installed Codex and Claude CLIs,
+and installs the shared plugin at user scope. Pass `--skip-agent-plugins` when
+machine policy prohibits plugin enrollment. Start a new Codex thread or
+restart/reload Claude after installation so the new skill is loaded.
+
+## Profiles
+
+Select the context explicitly when it is not the machine default:
+
+```sh
+sarathi --profile personal open ~/workspace/my-project --intent "Fix release notes"
+sarathi --profile work open ~/work/approved-project --intent "Investigate build failure"
+sarathi --profile neutral profile --json
+```
+
+The bootstrap identity becomes the installed wrapper's default, while
+`SARATHI_PROFILE` or `--profile` can select another context per command. Work
+sync uses only `SMRITI_WORK_URL` and `SMRITI_WORK_TOKEN`; personal sync uses
+only `SMRITI_PERSONAL_URL` and `SMRITI_PERSONAL_TOKEN`. Neutral mode never
+syncs to Smriti. Credentials stay in the environment or an approved secret
+store, never in this repository.
 
 ## Data and authority boundary
 
@@ -52,7 +77,9 @@ pass Smriti's approval ledger. See [`SECURITY.md`](SECURITY.md).
 
 - `src/sarathi/` — registry, controller, CLI, safe agent adapters and MCP bridge
 - `emacs/` — workspace UI and daemon integration
-- `integrations/codex/sarathi/` — shared Codex/Claude plugin and skill
+- `plugins/sarathi/` — shared Codex/Claude plugin, skill, and Smriti MCP bridge
+- `.agents/plugins/marketplace.json` — Codex marketplace catalog
+- `.claude-plugin/marketplace.json` — Claude marketplace catalog
 - `services/` — opt-in login service definitions
 - `integrations/shell/` — opt-in reusable shell alias and functions
 - `scripts/` — bootstrap and integration installers

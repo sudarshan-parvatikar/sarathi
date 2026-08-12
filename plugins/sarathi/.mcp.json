@@ -2,10 +2,7 @@
   "mcpServers": {
     "smriti": {
       "command": "sarathi-smriti-mcp",
-      "args": [],
-      "env": {
-        "SMRITI_URL": "${SMRITI_URL}"
-      }
+      "args": []
     }
   }
 }

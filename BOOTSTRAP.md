@@ -32,6 +32,10 @@ scripts/bootstrap --identity neutral --roles base --dry-run
 
 Use comma-separated roles, for example `--roles base,dev`.
 
+Identity selects the default data profile; install roles select components.
+They are intentionally separate concepts. Every task is permanently bound to
+exactly one `personal`, `work`, or `neutral` profile.
+
 ## 3. Verify authentication before retrieval
 
 Switch GitHub accounts only after the operator confirms the selected identity.
@@ -46,17 +50,28 @@ belong in the document.
 ## 4. Review the dry-run
 
 Run the exact intended selection with `--manifest PATH` and no `--apply`.
-Review identity, roles, existing paths, proposed clones/updates, plugin links,
-Emacs load path, and service files. On managed machines, reject personal source
-repositories unless policy explicitly permits them; use a reviewed offline
-release artifact when personal source is prohibited.
+Review identity, roles, existing paths, proposed clones/updates, Codex and
+Claude marketplace/plugin enrollment, Emacs load path, and service files. On
+managed machines, reject personal source repositories unless policy explicitly
+permits them; use a reviewed offline release artifact when personal source is
+prohibited. Pass `--skip-agent-plugins` if marketplace enrollment itself is not
+approved.
 
 ## 5. Apply only after approval
 
 Re-run the same command with `--apply`. The script installs no OS packages,
 changes no GitHub authentication, enables no services, starts no tunnels, and
-connects no employer system. It copies only the selected public client files
-and clones only exact allowlisted repositories into unoccupied destinations.
+connects no employer system. It copies only the selected public client files,
+clones only exact allowlisted repositories into unoccupied destinations, and
+registers the same local `sarathi` marketplace and plugin at user scope in each
+installed Codex and Claude CLI. Start a new Codex thread or restart/reload
+Claude after enrollment.
+
+The installed wrapper defaults to the selected identity. Use `--profile` or
+`SARATHI_PROFILE` per command when a machine hosts more than one context. Set
+only the matching private endpoint variables (`SMRITI_PERSONAL_URL` or
+`SMRITI_WORK_URL`); never configure one profile to point at the other's Smriti
+instance.
 
 ## 6. Prove idempotence
 

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .models import Task, utc_now
+from .profiles import resolve_profile
 
 try:
     import fcntl
@@ -16,16 +17,20 @@ except ImportError:  # pragma: no cover - Windows is not a V1 target.
     fcntl = None
 
 
-def default_state_dir() -> Path:
+def default_state_dir(profile: str = "neutral") -> Path:
     override = os.environ.get("SARATHI_STATE_DIR")
     if override:
-        return Path(override).expanduser()
-    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "sarathi"
+        return Path(override).expanduser() / resolve_profile(profile)
+    return (
+        Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
+        / "sarathi" / "profiles" / resolve_profile(profile)
+    )
 
 
 class Registry:
-    def __init__(self, path: Path | None = None) -> None:
-        self.path = path or default_state_dir() / "registry.json"
+    def __init__(self, path: Path | None = None, *, profile: str | None = None) -> None:
+        self.profile = resolve_profile(profile)
+        self.path = path or default_state_dir(self.profile) / "registry.json"
         self.lock_path = self.path.with_suffix(".lock")
 
     @contextmanager
@@ -85,7 +90,13 @@ class Registry:
                 return existing
             task_id = str(uuid.uuid4())
             short_id = task_id.split("-", 1)[0]
-            task = Task(id=task_id, short_id=short_id, title=f"task-{short_id}", workspace=str(workspace.resolve()))
+            task = Task(
+                id=task_id,
+                short_id=short_id,
+                title=f"task-{short_id}",
+                workspace=str(workspace.resolve()),
+                profile=self.profile,
+            )
             tasks[task.id] = task
             self._write_unlocked(tasks)
             return task

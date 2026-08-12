@@ -1,4 +1,0 @@
-interface:
-  display_name: "Sarathi Workspace"
-  short_description: "Open, resume, and hand off task-focused agent workspaces"
-  default_prompt: "Use $sarathi-workspace to open or resume the task workspace, preserve session identity, and capture a compact handoff."

@@ -9,6 +9,8 @@ records.
 - Never inject terminal keystrokes.
 - Reject dangerous permission-bypass flags by default.
 - Preserve immutable task IDs and native agent session IDs.
+- Preserve immutable task profiles and keep personal, work, and neutral state,
+  evidence, credentials, and Smriti endpoints isolated.
 - External writes require approval in Smriti; Sarathi must not grow a shortcut.
 - Use only the Python standard library in the controller foundation.
 - Run `PYTHONPATH=src python3 -m unittest discover -s tests -v` before handoff.

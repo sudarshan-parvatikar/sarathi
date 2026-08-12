@@ -6,6 +6,11 @@ Sarathi stores task IDs, short titles, workspace paths, agent/provider names,
 native session identifiers, redacted evidence summaries, and compact handoffs.
 Registry files are created mode `0600`.
 
+`personal`, `work`, and `neutral` profiles use separate state directories and
+outboxes. Workspace profile markers are immutable. Work and personal Smriti
+URLs and token variables are distinct; Sarathi never falls back from one to the
+other.
+
 ## Not retained
 
 Sarathi does not retain raw agent transcripts, terminal output, credentials,
@@ -26,10 +31,10 @@ are rejected. A caller must provide the controller's per-launch
 
 ## Remote boundary
 
-The Smriti endpoint is optional and must be supplied explicitly. Bearer tokens
-are read from an environment variable named by configuration and are never
-written to the registry. A failed sync is queued as derived JSON, not retried
-with broadened permissions.
+The Smriti endpoint is optional and must be supplied explicitly for the active
+profile. Bearer tokens are read from that profile's environment variable and
+are never written to the registry. A failed sync is queued as derived JSON,
+not retried against a different profile or with broadened permissions.
 
 Report vulnerabilities privately to the repository owner before public
 disclosure.

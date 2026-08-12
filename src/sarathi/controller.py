@@ -10,6 +10,7 @@ from .adapters import LaunchPlan, build_launch_plan, build_resume_plan
 from .codex_app_server import CodexAppServer
 from .models import Task, utc_now
 from .naming import infer_title, normalize_title
+from .profiles import resolve_profile, workspace_profile
 from .registry import Registry
 from .smriti_client import SmritiClient, SmritiUnavailable
 
@@ -24,12 +25,20 @@ class Controller:
         registry: Registry | None = None,
         smriti: SmritiClient | None = None,
         codex: CodexAppServer | None = None,
+        profile: str | None = None,
     ) -> None:
-        self.registry = registry or Registry()
-        self.smriti = smriti if smriti is not None else SmritiClient.from_environment()
+        self.profile = registry.profile if registry is not None else resolve_profile(profile)
+        self.registry = registry or Registry(profile=self.profile)
+        self.smriti = smriti if smriti is not None else SmritiClient.from_environment(self.profile)
         self.codex = codex or CodexAppServer()
 
     def create_task(self, workspace: Path, intent: str = "") -> Task:
+        existing_profile = workspace_profile(workspace)
+        if existing_profile and existing_profile != self.profile:
+            raise ValueError(
+                f"workspace belongs to {existing_profile!r}, not {self.profile!r}; "
+                "use a separate workspace instead of crossing profiles"
+            )
         workspace.mkdir(parents=True, exist_ok=True)
         task = self.registry.create(workspace)
         self.ensure_workspace_files(task)
@@ -45,9 +54,18 @@ class Controller:
     def ensure_workspace_files(self, task: Task) -> None:
         root = Path(task.workspace) / ".sarathi"
         root.mkdir(parents=True, exist_ok=True)
+        profile_path = root / "profile"
+        if profile_path.exists() and profile_path.read_text(encoding="utf-8").strip() != task.profile:
+            raise ValueError("workspace profile cannot be changed")
+        profile_path.write_text(task.profile + "\n", encoding="utf-8")
         defaults = {
-            "context.md": f"# {task.title}\n\nTask ID: `{task.id}`\n\n## Context\n\n",
-            "handoff.md": f"# Handoff — {task.title}\n\n## Done\n\n## Next\n\n## Risks\n\n",
+            "context.md": (
+                f"# {task.title}\n\nTask ID: `{task.id}`\n\nProfile: `{task.profile}`\n\n## Context\n\n"
+            ),
+            "handoff.md": (
+                f"# Handoff — {task.title}\n\nProfile: `{task.profile}`\n\n"
+                "## Done\n\n## Next\n\n## Risks\n\n"
+            ),
         }
         for name, content in defaults.items():
             path = root / name
@@ -120,6 +138,7 @@ class Controller:
             "id": str(uuid4()),
             "schema_version": 1,
             "task_id": task.id,
+            "profile": task.profile,
             "kind": kind,
             "summary": summary.strip(),
             "source_refs": sources,
@@ -153,6 +172,7 @@ class Controller:
         resolution = {
             "schema_version": 1,
             "task_id": task.id,
+            "profile": task.profile,
             "title": task.title,
             "completed_at": completed_at,
             "approach": approach.strip(),
@@ -185,6 +205,7 @@ class Controller:
             "id": str(uuid4()),
             "schema_version": 1,
             "task_id": task.id,
+            "profile": task.profile,
             "kind": "result",
             "summary": result.strip(),
             "action": approach.strip(),
@@ -264,7 +285,8 @@ class Controller:
     def open_emacs(self, task: Task, *, agent: str | None = None) -> None:
         expression = (
             "(progn (require 'sarathi) "
-            f"(sarathi-open-task {json.dumps(task.id)} {json.dumps(task.workspace)} {json.dumps(task.title)})"
+            f"(sarathi-open-task {json.dumps(task.id)} {json.dumps(task.workspace)} "
+            f"{json.dumps(task.title)} {json.dumps(task.profile)})"
             + (f" (sarathi-launch-agent {json.dumps(task.id)} {json.dumps(agent)}))" if agent else ")")
         )
         command = ["emacsclient", "--socket-name=sarathi", "--create-frame", "--no-wait", "--eval", expression]
