@@ -1,0 +1,19 @@
+{
+  "name": "sarathi",
+  "version": "0.1.0",
+  "description": "Open, resume, name, and hand off safe task-focused agent workspaces",
+  "author": {
+    "name": "Sudarshan Parvatikar"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sarathi",
+    "shortDescription": "Resumable task workspaces and evidence capture.",
+    "longDescription": "Sarathi coordinates immutable task identities, safe Codex sessions, compact handoffs, and optional private Smriti evidence capture.",
+    "developerName": "Sudarshan Parvatikar",
+    "category": "Productivity",
+    "capabilities": ["skills", "mcp"],
+    "defaultPrompt": "Use Sarathi Workspace to open or resume this task and preserve a compact handoff."
+  },
+  "mcpServers": "./.mcp.json"
+}

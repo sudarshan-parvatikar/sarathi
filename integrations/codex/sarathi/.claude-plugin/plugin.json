@@ -1,0 +1,11 @@
+{
+  "name": "sarathi",
+  "version": "0.1.0",
+  "description": "Resumable task workspaces, safe agent sessions, handoffs, and derived evidence capture",
+  "author": {
+    "name": "Sudarshan Parvatikar"
+  },
+  "homepage": "https://github.com/sudarshan-parvatikar/sarathi",
+  "repository": "https://github.com/sudarshan-parvatikar/sarathi",
+  "license": "Apache-2.0"
+}
