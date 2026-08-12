@@ -1,0 +1,14 @@
+[Unit]
+Description=Sarathi Emacs daemon
+Documentation=https://github.com/sudarshan-parvatikar/sarathi/blob/main/BOOTSTRAP.md
+
+[Service]
+Type=notify
+ExecStart=/usr/bin/emacs --fg-daemon=sarathi
+ExecStop=/usr/bin/emacsclient --socket-name=sarathi --eval (kill-emacs)
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

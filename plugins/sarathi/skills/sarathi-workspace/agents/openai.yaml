@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sarathi Workspace"
+  short_description: "Role-isolated, resumable task workspaces"
+  default_prompt: "Use $sarathi-workspace to open or resume this task in the correct profile, preserve session identity, and capture a compact handoff."

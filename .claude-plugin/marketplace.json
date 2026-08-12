@@ -1,0 +1,21 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "sarathi",
+  "description": "Role-aware, resumable task workspaces for Claude, Codex, and Agy",
+  "owner": {
+    "name": "Sudarshan Parvatikar"
+  },
+  "plugins": [
+    {
+      "name": "sarathi",
+      "description": "Open, resume, name, hand off, and capture evidence for role-isolated task workspaces",
+      "version": "0.2.1",
+      "author": {
+        "name": "Sudarshan Parvatikar"
+      },
+      "source": "./plugins/sarathi",
+      "category": "productivity",
+      "homepage": "https://github.com/sudarshan-parvatikar/sarathi"
+    }
+  ]
+}
