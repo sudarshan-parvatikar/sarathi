@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "smriti": {
+      "command": "sarathi-smriti-mcp",
+      "args": []
+    }
+  }
+}

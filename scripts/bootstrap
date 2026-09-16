@@ -1,0 +1,340 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import platform
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+CLIENT_PATHS = (
+    "src", "emacs", "integrations", "plugins", "services", "scripts", ".agents",
+    ".claude-plugin", "BOOTSTRAP.md", "README.md", "SECURITY.md", "pyproject.toml",
+)
+
+
+def client_digest(source_root: Path) -> str:
+    digest = hashlib.sha256()
+    files: list[Path] = []
+    for name in CLIENT_PATHS:
+        path = source_root / name
+        files.extend(sorted(path.rglob("*")) if path.is_dir() else [path])
+    for path in files:
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        digest.update(str(path.relative_to(source_root)).encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def install_client(source_root: Path, prefix: Path, *, profile: str, apply: bool) -> dict:
+    install_root = prefix / "share" / "sarathi"
+    marker = install_root / ".sarathi-managed.json"
+    expected_digest = client_digest(source_root)
+    existing_digest = existing_profile = None
+    if marker.is_file():
+        try:
+            marker_value = json.loads(marker.read_text(encoding="utf-8"))
+            existing_digest = marker_value.get("digest")
+            existing_profile = marker_value.get("profile")
+        except (ValueError, OSError):
+            existing_digest = None
+    if install_root.exists() and not marker.is_file():
+        return {"component": "sarathi-client", "destination": str(install_root), "status": "conflict-unmanaged"}
+    if existing_digest == expected_digest and existing_profile == profile:
+        status = "present-current"
+    elif install_root.exists():
+        status = "would-update"
+    else:
+        status = "would-install"
+    wrappers = {
+        prefix / "bin" / "sarathi": "sarathi.cli",
+        prefix / "bin" / "sarathi-smriti-mcp": "sarathi.smriti_mcp",
+    }
+    wrapper_texts = {
+        wrapper: (
+            "#!/bin/sh\n# managed-by-sarathi-bootstrap-v1\n"
+            f"SARATHI_PROFILE=${{SARATHI_PROFILE:-{profile}}}\n"
+            "export SARATHI_PROFILE\n"
+            f"PYTHONPATH={str(install_root / 'src')!r}${{PYTHONPATH:+:${{PYTHONPATH}}}} "
+            f"exec python3 -m {module} \"$@\"\n"
+        )
+        for wrapper, module in wrappers.items()
+    }
+    for wrapper in wrappers:
+        if wrapper.exists() and "managed-by-sarathi-bootstrap-v1" not in wrapper.read_text(encoding="utf-8", errors="replace"):
+            return {
+                "component": "sarathi-client",
+                "destination": str(install_root),
+                "status": "conflict-wrapper",
+                "wrapper": str(wrapper),
+            }
+    if status == "present-current" and any(
+        not wrapper.is_file() or wrapper.read_text(encoding="utf-8") != wrapper_texts[wrapper]
+        for wrapper in wrappers
+    ):
+        status = "would-repair"
+    if apply and status in {"would-install", "would-update", "would-repair"}:
+        install_root.parent.mkdir(parents=True, exist_ok=True)
+        staging_parent = Path(tempfile.mkdtemp(prefix="sarathi-install-", dir=install_root.parent))
+        staging = staging_parent / "sarathi"
+        staging.mkdir()
+        for name in CLIENT_PATHS:
+            source = source_root / name
+            destination = staging / name
+            if source.is_dir():
+                shutil.copytree(source, destination, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            else:
+                shutil.copy2(source, destination)
+        (staging / ".sarathi-managed.json").write_text(
+            json.dumps({"schema": 2, "digest": expected_digest, "profile": profile}, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        previous = staging_parent / "previous"
+        if install_root.exists():
+            install_root.rename(previous)
+        staging.rename(install_root)
+        if previous.exists():
+            shutil.rmtree(previous)
+        staging_parent.rmdir()
+        for wrapper in wrappers:
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+            wrapper.write_text(wrapper_texts[wrapper], encoding="utf-8")
+            wrapper.chmod(0o755)
+        status = "installed" if existing_digest is None else "updated"
+    return {
+        "component": "sarathi-client",
+        "destination": str(install_root),
+        "profile": profile,
+        "status": status,
+    }
+
+
+def command_output(command: list[str]) -> tuple[int, str]:
+    try:
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, check=False)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return 124, str(exc)
+    return result.returncode, (result.stdout or "") + (result.stderr or "")
+
+
+def configured_codex_marketplaces() -> dict[str, str]:
+    if not shutil.which("codex"):
+        return {}
+    code, output = command_output(["codex", "plugin", "marketplace", "list"])
+    if code:
+        return {}
+    rows: dict[str, str] = {}
+    for line in output.splitlines():
+        fields = line.split(maxsplit=1)
+        if len(fields) == 2 and fields[0] != "MARKETPLACE":
+            rows[fields[0]] = fields[1].strip()
+    return rows
+
+
+def configured_claude_marketplaces() -> dict[str, str]:
+    if not shutil.which("claude"):
+        return {}
+    code, output = command_output(["claude", "plugin", "marketplace", "list"])
+    if code:
+        return {}
+    rows: dict[str, str] = {}
+    current: str | None = None
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("❯ "):
+            current = stripped.removeprefix("❯ ").strip()
+        elif current and stripped.startswith("Source: Directory (") and stripped.endswith(")"):
+            rows[current] = stripped.removeprefix("Source: Directory (")[:-1]
+            current = None
+        elif current and stripped.startswith("Source:"):
+            rows[current] = stripped.removeprefix("Source:").strip()
+            current = None
+    return rows
+
+
+def plugin_is_installed(agent: str) -> bool:
+    code, output = command_output([agent, "plugin", "list"])
+    if code:
+        return False
+    lines = output.splitlines()
+    for index, line in enumerate(lines):
+        if "sarathi@sarathi" not in line:
+            continue
+        block = " ".join(lines[index:index + 5]).casefold()
+        codex_installed = "installed" in line.casefold() and "not installed" not in line.casefold()
+        claude_installed = "status:" in block and "enabled" in block
+        return codex_installed or claude_installed
+    return False
+
+
+def enroll_agent_plugins(marketplace_root: Path, *, apply: bool, refresh: bool = False) -> list[dict]:
+    actions: list[dict] = []
+    root = str(marketplace_root.resolve())
+    for agent, configured in (
+        ("codex", configured_codex_marketplaces()),
+        ("claude", configured_claude_marketplaces()),
+    ):
+        if not shutil.which(agent):
+            actions.append({"component": f"{agent}-plugin", "status": "tool-unavailable-skipped"})
+            continue
+        known_root = configured.get("sarathi")
+        if known_root and Path(known_root).expanduser().resolve() != marketplace_root.resolve():
+            actions.append({
+                "component": f"{agent}-marketplace",
+                "status": "conflict-existing-source",
+                "existing": known_root,
+                "requested": root,
+            })
+            continue
+        if not known_root:
+            status = "would-register"
+            if apply:
+                command = [agent, "plugin", "marketplace", "add"]
+                if agent == "claude":
+                    command.extend(["--scope", "user"])
+                command.append(root)
+                code, output = command_output(command)
+                status = "registered" if code == 0 else "failed"
+                if code:
+                    actions.append({
+                        "component": f"{agent}-marketplace",
+                        "status": status,
+                        "detail": output.strip()[-500:],
+                    })
+                    continue
+            actions.append({"component": f"{agent}-marketplace", "status": status, "source": root})
+        else:
+            actions.append({"component": f"{agent}-marketplace", "status": "present-current", "source": root})
+        installed = plugin_is_installed(agent)
+        status = "would-update" if installed and refresh else ("present-current" if installed else "would-install")
+        if apply and (not installed or refresh):
+            if installed and agent == "claude":
+                command = [agent, "plugin", "update", "sarathi@sarathi"]
+            else:
+                command = [agent, "plugin", "install" if agent == "claude" else "add"]
+                if agent == "claude":
+                    command.extend(["--scope", "user"])
+                command.append("sarathi@sarathi")
+            code, output = command_output(command)
+            status = ("updated" if installed else "installed") if code == 0 else "failed"
+            if code:
+                actions.append({"component": f"{agent}-plugin", "status": status, "detail": output.strip()[-500:]})
+                continue
+        actions.append({"component": f"{agent}-plugin", "status": status})
+    return actions
+
+
+def command_version(command: str) -> str | None:
+    path = shutil.which(command)
+    if not path:
+        return None
+    try:
+        result = subprocess.run([command, "--version"], capture_output=True, text=True, timeout=5, check=False)
+    except OSError:
+        return None
+    return (result.stdout or result.stderr).splitlines()[0] if (result.stdout or result.stderr) else path
+
+
+def active_github_login() -> str | None:
+    if not shutil.which("gh"):
+        return None
+    result = subprocess.run(["gh", "api", "user", "--jq", ".login"], capture_output=True, text=True, timeout=10, check=False)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def load_manifest(path: Path | None) -> dict:
+    if path is None:
+        return {"version": 1, "repositories": []}
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if value.get("version") != 1 or not isinstance(value.get("repositories"), list):
+        raise ValueError("manifest must be version 1 with a repositories list")
+    allowed = {"repository", "roles", "destination", "artifact_url"}
+    for row in value["repositories"]:
+        if not {"repository", "roles", "destination"}.issubset(row) or set(row) - allowed:
+            raise ValueError("invalid repository manifest row")
+    return value
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Dry-run-first Sarathi bootstrap")
+    parser.add_argument("--identity", required=True, choices=("personal", "work", "neutral"))
+    parser.add_argument("--roles", required=True)
+    parser.add_argument("--manifest", type=Path)
+    parser.add_argument("--expected-login", default=os.environ.get("SARATHI_EXPECT_GITHUB_LOGIN"))
+    parser.add_argument("--prefix", type=Path, default=Path("~/.local"))
+    parser.add_argument("--skip-agent-plugins", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--apply", action="store_true")
+    mode.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+    roles = {value.strip() for value in args.roles.split(",") if value.strip()}
+    if not roles or roles - {"base", "dev", "server"}:
+        parser.error("roles must contain base, dev, and/or server")
+    if args.identity == "neutral" and args.manifest:
+        parser.error("neutral identity cannot load a private repository manifest")
+    manifest = load_manifest(args.manifest)
+    login = active_github_login()
+    expected = args.expected_login
+    if args.identity != "neutral" and not expected:
+        parser.error("personal/work setup requires --expected-login before private manifest retrieval")
+    if expected and login != expected:
+        print(f"identity mismatch: expected {expected}, found {login or 'none'}", file=sys.stderr)
+        return 3
+
+    report = {
+        "mode": "apply" if args.apply else "dry-run",
+        "identity": args.identity,
+        "roles": sorted(roles),
+        "system": {"os": platform.system(), "release": platform.release(), "arch": platform.machine()},
+        "github_login": login,
+        "tools": {name: command_version(name) for name in ("git", "gh", "python3", "emacs", "emacsclient", "claude", "codex", "agy")},
+        "actions": [],
+    }
+    for row in manifest["repositories"]:
+        if not roles.intersection(row["roles"]):
+            continue
+        destination = Path(row["destination"]).expanduser()
+        action = {"repository": row["repository"], "destination": str(destination)}
+        if destination.exists():
+            action["status"] = "present-no-change"
+        elif args.apply:
+            result = subprocess.run(["gh", "repo", "clone", row["repository"], str(destination)], check=False)
+            action["status"] = "cloned" if result.returncode == 0 else "failed"
+        else:
+            action["status"] = "would-clone"
+        report["actions"].append(action)
+    if "base" in roles:
+        client = install_client(
+            Path(__file__).resolve().parent.parent,
+            args.prefix.expanduser(),
+            profile=args.identity,
+            apply=args.apply,
+        )
+        report["actions"].append(client)
+        if args.skip_agent_plugins:
+            report["actions"].append({"component": "agent-plugins", "status": "explicitly-skipped"})
+        elif client["status"] not in {"conflict-unmanaged", "conflict-wrapper"}:
+            marketplace_root = args.prefix.expanduser() / "share" / "sarathi"
+            report["actions"].extend(enroll_agent_plugins(
+                marketplace_root,
+                apply=args.apply,
+                refresh=client["status"] in {"would-update", "updated"},
+            ))
+    if "server" in roles:
+        report["actions"].append({"component": "login-services", "status": "available-not-enabled"})
+    print(json.dumps(report, indent=2, sort_keys=True))
+    blocked = {"failed", "conflict-unmanaged", "conflict-wrapper", "conflict-existing-source"}
+    return 0 if all(action.get("status") not in blocked for action in report["actions"]) else 4
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,38 @@
+{
+  "name": "sarathi",
+  "version": "0.2.1+codex.20260916092053",
+  "description": "Role-aware, resumable task workspaces for Claude, Codex, and Agy",
+  "author": {
+    "name": "Sudarshan Parvatikar",
+    "url": "https://github.com/sudarshan-parvatikar"
+  },
+  "homepage": "https://github.com/sudarshan-parvatikar/sarathi",
+  "repository": "https://github.com/sudarshan-parvatikar/sarathi",
+  "license": "Apache-2.0",
+  "keywords": [
+    "tasks",
+    "workspaces",
+    "handoffs",
+    "evidence",
+    "emacs"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Sarathi",
+    "shortDescription": "Role-isolated task workspaces and evidence capture.",
+    "longDescription": "Sarathi coordinates immutable task identities, safe Claude, Codex, and Agy sessions, compact handoffs, and isolated personal, work, or neutral evidence capture.",
+    "developerName": "Sudarshan Parvatikar",
+    "category": "Productivity",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "websiteURL": "https://github.com/sudarshan-parvatikar/sarathi",
+    "defaultPrompt": [
+      "Open or resume this task in the correct Sarathi profile.",
+      "Capture how this task was solved before completing it.",
+      "Prepare a compact, redacted handoff for another agent."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

@@ -1,0 +1,8 @@
+[Unit]
+Description=Refresh native AI session names from Sarathi task titles
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/sarathi --profile personal refresh-names
+ExecStart=%h/.local/bin/sarathi --profile work refresh-names
+ExecStart=%h/.local/bin/sarathi --profile neutral refresh-names

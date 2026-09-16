@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sarathi-work-controller"
+version = "0.2.1"
+description = "Local Emacs controller for resumable AI task workspaces"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "Apache-2.0"}
+authors = [{name = "Sudarshan Parvatikar"}]
+dependencies = []
+
+[project.scripts]
+sarathi = "sarathi.cli:main"
+sarathi-smriti-mcp = "sarathi.smriti_mcp:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
