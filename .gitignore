@@ -1,4 +1,5 @@
 .pytest_cache/
+.sarathi/
 .venv/
 __pycache__/
 *.py[cod]

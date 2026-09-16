@@ -130,6 +130,30 @@ class Controller:
             session = matches[0]
         return build_resume_plan(task, session)
 
+    def refresh_session_names(self, task_id: str | None = None) -> dict[str, int]:
+        """Reapply task titles to native sessions without consuming rename allowance."""
+        tasks = [self.registry.get(task_id)] if task_id else self.registry.list()
+        attempted = refreshed = failed = 0
+        for task in tasks:
+            changed = False
+            for session in task.sessions.values():
+                session.title = task.title
+                session.updated_at = utc_now()
+                changed = True
+                if session.agent != "codex" or not session.native_id:
+                    continue
+                attempted += 1
+                try:
+                    self.codex.set_name(session.native_id, task.title)
+                except (OSError, TimeoutError, RuntimeError):
+                    task.sync_pending = True
+                    failed += 1
+                else:
+                    refreshed += 1
+            if changed:
+                self.registry.save(task)
+        return {"attempted": attempted, "refreshed": refreshed, "failed": failed}
+
     def capture_evidence(self, task_id: str, kind: str, summary: str, sources: list[str]) -> dict[str, Any]:
         if not summary.strip():
             raise ValueError("evidence summary cannot be empty")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from typing import Any
@@ -31,7 +32,7 @@ class SmritiClient:
         token_env = os.environ.get(f"{prefix}_TOKEN_ENV", f"{prefix}_TOKEN")
         return cls(value.rstrip("/"), token_env, profile=selected) if value else None
 
-    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> dict[str, Any]:
+    def request(self, method: str, path: str, payload: dict[str, Any] | None = None) -> Any:
         data = json.dumps(payload).encode() if payload is not None else None
         headers = {"Accept": "application/json", "Content-Type": "application/json"}
         token = os.environ.get(self.token_env)
@@ -73,4 +74,52 @@ class SmritiClient:
             "PUT",
             f"/api/v1/tasks/{task_id}/handoff",
             {**payload, "profile": self.profile},
+        )
+
+    def publish_context(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return self.request(
+            "POST", "/api/v1/context-messages", {**payload, "profile": self.profile},
+        )
+
+    def consume_context(
+        self,
+        *,
+        consumer_id: str,
+        topic: str | None = None,
+        kinds: list[str] | None = None,
+        task_id: str | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {
+            "consumer_id": consumer_id,
+            "profile": self.profile,
+            "limit": limit,
+        }
+        if topic:
+            query["topic"] = topic
+        if kinds:
+            query["kinds"] = kinds
+        if task_id:
+            query["task_id"] = task_id
+        return self.request(
+            "GET", f"/api/v1/context-messages?{urllib.parse.urlencode(query, doseq=True)}",
+        )
+
+    def acknowledge_context(
+        self,
+        message_id: str,
+        *,
+        consumer_id: str,
+        status: str = "acknowledged",
+        note: str | None = None,
+    ) -> dict[str, Any]:
+        return self.request(
+            "POST",
+            f"/api/v1/context-messages/{message_id}/ack",
+            {
+                "consumer_id": consumer_id,
+                "status": status,
+                "note": note,
+                "profile": self.profile,
+            },
         )

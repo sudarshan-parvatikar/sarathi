@@ -45,6 +45,11 @@ def parser() -> argparse.ArgumentParser:
     rename_cmd.add_argument("--automatic", action="store_true")
     rename_cmd.add_argument("--major-intent-change", action="store_true")
 
+    refresh_names_cmd = sub.add_parser(
+        "refresh-names", help="reapply current task titles to registered native sessions"
+    )
+    refresh_names_cmd.add_argument("task_id", nargs="?")
+
     agent_cmd = sub.add_parser("agent-command", help="prepare a safe native agent session")
     agent_cmd.add_argument("task_id")
     agent_cmd.add_argument("agent", choices=("claude", "codex", "agy"))
@@ -118,6 +123,8 @@ def main(argv: list[str] | None = None) -> int:
                 major_intent_change=args.major_intent_change,
             )
             print(_task_json(task))
+        elif args.command == "refresh-names":
+            print(json.dumps(controller.refresh_session_names(args.task_id), sort_keys=True))
         elif args.command == "agent-command":
             plan = controller.prepare_agent(
                 args.task_id,

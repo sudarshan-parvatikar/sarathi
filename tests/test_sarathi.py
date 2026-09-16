@@ -32,6 +32,8 @@ class FakeSmriti:
     def __init__(self) -> None:
         self.tasks: list[tuple[str, str]] = []
         self.evidence: list[dict] = []
+        self.context: list[dict] = []
+        self.receipts: list[dict] = []
 
     def upsert_task(self, task):
         self.tasks.append((task.id, task.title))
@@ -40,6 +42,18 @@ class FakeSmriti:
     def capture_evidence(self, payload):
         self.evidence.append(payload)
         return payload
+
+    def publish_context(self, payload):
+        self.context.append(payload)
+        return payload
+
+    def consume_context(self, **filters):
+        return [{"id": "message-1", **filters}]
+
+    def acknowledge_context(self, message_id, **receipt):
+        value = {"message_id": message_id, **receipt}
+        self.receipts.append(value)
+        return value
 
 
 class FailingSmriti(FakeSmriti):
@@ -106,6 +120,18 @@ class RegistryAndNamingTests(unittest.TestCase):
         changed = self.controller.rename(task.id, "Validate unchanged inference cache", major_intent_change=True)
         self.assertIn(("thr_synthetic", changed.title), self.codex.names)
 
+    def test_periodic_name_refresh_reapplies_title_without_using_rename_allowance(self) -> None:
+        task = self.controller.create_task(self.workspace, "Keep current task visible")
+        self.controller.prepare_agent(task.id, "codex")
+        before = self.registry.get(task.id).automatic_renames
+        self.codex.names.clear()
+
+        result = self.controller.refresh_session_names(task.id)
+
+        self.assertEqual({"attempted": 1, "refreshed": 1, "failed": 0}, result)
+        self.assertEqual(before, self.registry.get(task.id).automatic_renames)
+        self.assertEqual([("thr_synthetic", task.title)], self.codex.names)
+
     def test_unsafe_bypass_flags_are_rejected(self) -> None:
         task = self.controller.create_task(self.workspace, "Run safe agent workspace")
         for flag in UNSAFE_FLAGS:
@@ -164,7 +190,10 @@ class McpTests(unittest.TestCase):
     def test_tools_are_described_before_smriti_is_configured(self) -> None:
         result = handle({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}, None)
         names = {tool["name"] for tool in result["result"]["tools"]}
-        self.assertEqual({"smriti_task_get", "smriti_evidence_capture", "smriti_handoff_put"}, names)
+        self.assertEqual({
+            "smriti_task_get", "smriti_evidence_capture", "smriti_handoff_put",
+            "smriti_context_publish", "smriti_context_consume", "smriti_context_ack",
+        }, names)
 
     def test_write_fails_closed_without_endpoint(self) -> None:
         result = handle(
@@ -194,8 +223,46 @@ class McpTests(unittest.TestCase):
             self.assertIsNone(SmritiClient.from_environment("work"))
             self.assertIsNone(SmritiClient.from_environment("personal"))
 
+    def test_context_tools_publish_consume_and_ack(self) -> None:
+        client = FakeSmriti()
+        published = handle({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {"name": "smriti_context_publish", "arguments": {
+                "producer_id": "agent:producer", "topic": "smriti.mcp",
+                "kind": "issue", "summary": "The bridge wrapper was missing.",
+            }},
+        }, client)
+        self.assertEqual("issue", published["result"]["structuredContent"]["kind"])
+        consumed = handle({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": {"name": "smriti_context_consume", "arguments": {
+                "consumer_id": "agent:consumer", "topic": "smriti.mcp", "limit": 10,
+            }},
+        }, client)
+        self.assertEqual("message-1", consumed["result"]["structuredContent"][0]["id"])
+        acknowledged = handle({
+            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": {"name": "smriti_context_ack", "arguments": {
+                "message_id": "message-1", "consumer_id": "agent:consumer",
+            }},
+        }, client)
+        self.assertEqual("acknowledged", acknowledged["result"]["structuredContent"]["status"])
+
 
 class BootstrapTests(unittest.TestCase):
+    def test_agent_host_bootstrap_defaults_to_a_non_mutating_plan(self) -> None:
+        script = Path(__file__).parents[1] / "scripts" / "agent-host-bootstrap"
+        result = subprocess.run(
+            [sys.executable, str(script), "--manager", "apt", "--group", "core", "--dry-run", "--json"],
+            capture_output=True, text=True, check=True,
+        )
+        payload = json.loads(result.stdout)
+        self.assertEqual("dry-run", payload["mode"])
+        self.assertEqual("apt", payload["manager"])
+        self.assertEqual("core", payload["groups"][0])
+        self.assertTrue(payload["actions"])
+        self.assertTrue({action["status"] for action in payload["actions"]} <= {"present", "would-install", "manual"})
+
     def test_neutral_dry_run_is_non_mutating_and_repeatable(self) -> None:
         script = Path(__file__).parents[1] / "scripts" / "bootstrap"
         env = dict(os.environ)
@@ -219,8 +286,24 @@ class BootstrapTests(unittest.TestCase):
             applied = subprocess.run(command, capture_output=True, text=True, check=True)
             self.assertEqual("installed", json.loads(applied.stdout)["actions"][0]["status"])
             wrapper = Path(prefix) / "bin" / "sarathi"
+            mcp_wrapper = Path(prefix) / "bin" / "sarathi-smriti-mcp"
+            host_bootstrap = Path(prefix) / "share" / "sarathi" / "scripts" / "agent-host-bootstrap"
             self.assertTrue(wrapper.exists())
+            self.assertTrue(mcp_wrapper.exists())
+            self.assertTrue(host_bootstrap.is_file())
+            self.assertTrue(os.access(host_bootstrap, os.X_OK))
+            host_plan = subprocess.run(
+                [str(host_bootstrap), "--manager", "apt", "--group", "core", "--dry-run", "--json"],
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual("dry-run", json.loads(host_plan.stdout)["mode"])
             self.assertEqual(0, subprocess.run([str(wrapper), "--help"], capture_output=True).returncode)
+            initialized = subprocess.run(
+                [str(mcp_wrapper)],
+                input=json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize"}) + "\n",
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual("sarathi-smriti", json.loads(initialized.stdout)["result"]["serverInfo"]["name"])
             selected = subprocess.run([str(wrapper), "profile"], capture_output=True, text=True, check=True)
             self.assertEqual("neutral", selected.stdout.strip())
             checked = subprocess.run(command[:-1] + ["--dry-run"], capture_output=True, text=True, check=True)

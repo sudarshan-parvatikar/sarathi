@@ -19,6 +19,9 @@ optional private Smriti instance.
 - Task directories hold context, handoff, and derived evidence files—never raw
   terminal output or transcripts. Failed Smriti writes remain as replayable,
   per-event outbox files and `sarathi sync` retries them.
+- The Smriti MCP bridge exposes audited producer/consumer context channels for
+  redacted issues, fixes, workarounds, decisions, requests, and results. Each
+  consumer acknowledges independently; messages never authorize external work.
 - The repository is a marketplace for both Codex and Claude. Both install one
   canonical agent-neutral plugin, skill, and small Smriti MCP bridge from
   `plugins/sarathi`; there are no provider-specific copies to drift.
@@ -39,6 +42,7 @@ optional private Smriti instance.
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 PYTHONPATH=src python3 -m sarathi.cli --help
 scripts/bootstrap --identity neutral --roles base --dry-run
+scripts/agent-host-bootstrap --group core --group python --dry-run
 ```
 
 Install into an isolated environment with `pipx install .`, or use
@@ -82,7 +86,7 @@ pass Smriti's approval ledger. See [`SECURITY.md`](SECURITY.md).
 - `.claude-plugin/marketplace.json` — Claude marketplace catalog
 - `services/` — opt-in login service definitions
 - `integrations/shell/` — opt-in reusable shell alias and functions
-- `scripts/` — bootstrap and integration installers
+- `scripts/` — Sarathi bootstrap, host-tool planning, and integration installers
 - `tests/` — synthetic acceptance tests
 
 License: Apache-2.0.

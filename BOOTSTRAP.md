@@ -73,6 +73,16 @@ only the matching private endpoint variables (`SMRITI_PERSONAL_URL` or
 `SMRITI_WORK_URL`); never configure one profile to point at the other's Smriti
 instance.
 
+The client install creates both `sarathi` and `sarathi-smriti-mcp` wrappers.
+The latter is the STDIO entry point used by the shared Codex/Claude plugin.
+Run an MCP `initialize` probe or start a new local agent session after an
+update to verify that the host can resolve it.
+
+Host productivity tools are separate from the Sarathi client. Inspect them
+with `scripts/agent-host-bootstrap --dry-run`; add `--apply` only after
+reviewing the package-manager plan. Service clients are opt-in and the script
+does not enable daemons or create credentials.
+
 ## 6. Prove idempotence
 
 Run the same dry-run again. Success is zero proposed mutations and all

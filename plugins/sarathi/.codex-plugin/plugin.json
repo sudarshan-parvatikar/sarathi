@@ -1,6 +1,6 @@
 {
   "name": "sarathi",
-  "version": "0.2.1+codex.20260812090813",
+  "version": "0.2.1+codex.20260916092053",
   "description": "Role-aware, resumable task workspaces for Claude, Codex, and Agy",
   "author": {
     "name": "Sudarshan Parvatikar",

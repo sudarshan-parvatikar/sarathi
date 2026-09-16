@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 CLIENT_PATHS = (
-    "src", "emacs", "integrations", "plugins", "services", ".agents",
+    "src", "emacs", "integrations", "plugins", "services", "scripts", ".agents",
     ".claude-plugin", "BOOTSTRAP.md", "README.md", "SECURITY.md", "pyproject.toml",
 )
 
@@ -55,17 +55,32 @@ def install_client(source_root: Path, prefix: Path, *, profile: str, apply: bool
         status = "would-update"
     else:
         status = "would-install"
-    wrapper = prefix / "bin" / "sarathi"
-    wrapper_text = (
-        "#!/bin/sh\n# managed-by-sarathi-bootstrap-v1\n"
-        f"SARATHI_PROFILE=${{SARATHI_PROFILE:-{profile}}}\n"
-        "export SARATHI_PROFILE\n"
-        f"PYTHONPATH={str(install_root / 'src')!r}${{PYTHONPATH:+:${{PYTHONPATH}}}} "
-        "exec python3 -m sarathi.cli \"$@\"\n"
-    )
-    if wrapper.exists() and "managed-by-sarathi-bootstrap-v1" not in wrapper.read_text(encoding="utf-8", errors="replace"):
-        return {"component": "sarathi-client", "destination": str(install_root), "status": "conflict-wrapper"}
-    if status == "present-current" and (not wrapper.is_file() or wrapper.read_text(encoding="utf-8") != wrapper_text):
+    wrappers = {
+        prefix / "bin" / "sarathi": "sarathi.cli",
+        prefix / "bin" / "sarathi-smriti-mcp": "sarathi.smriti_mcp",
+    }
+    wrapper_texts = {
+        wrapper: (
+            "#!/bin/sh\n# managed-by-sarathi-bootstrap-v1\n"
+            f"SARATHI_PROFILE=${{SARATHI_PROFILE:-{profile}}}\n"
+            "export SARATHI_PROFILE\n"
+            f"PYTHONPATH={str(install_root / 'src')!r}${{PYTHONPATH:+:${{PYTHONPATH}}}} "
+            f"exec python3 -m {module} \"$@\"\n"
+        )
+        for wrapper, module in wrappers.items()
+    }
+    for wrapper in wrappers:
+        if wrapper.exists() and "managed-by-sarathi-bootstrap-v1" not in wrapper.read_text(encoding="utf-8", errors="replace"):
+            return {
+                "component": "sarathi-client",
+                "destination": str(install_root),
+                "status": "conflict-wrapper",
+                "wrapper": str(wrapper),
+            }
+    if status == "present-current" and any(
+        not wrapper.is_file() or wrapper.read_text(encoding="utf-8") != wrapper_texts[wrapper]
+        for wrapper in wrappers
+    ):
         status = "would-repair"
     if apply and status in {"would-install", "would-update", "would-repair"}:
         install_root.parent.mkdir(parents=True, exist_ok=True)
@@ -90,9 +105,10 @@ def install_client(source_root: Path, prefix: Path, *, profile: str, apply: bool
         if previous.exists():
             shutil.rmtree(previous)
         staging_parent.rmdir()
-        wrapper.parent.mkdir(parents=True, exist_ok=True)
-        wrapper.write_text(wrapper_text, encoding="utf-8")
-        wrapper.chmod(0o755)
+        for wrapper in wrappers:
+            wrapper.parent.mkdir(parents=True, exist_ok=True)
+            wrapper.write_text(wrapper_texts[wrapper], encoding="utf-8")
+            wrapper.chmod(0o755)
         status = "installed" if existing_digest is None else "updated"
     return {
         "component": "sarathi-client",

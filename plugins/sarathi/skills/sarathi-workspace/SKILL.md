@@ -47,7 +47,11 @@ rejects a workspace already owned by another profile.
 
 Sarathi propagates the title to Emacs, its session registry, Smriti, and Codex
 through `thread/name/set`. Claude receives `--name` before launch. Agy uses the
-Sarathi registry title.
+Sarathi registry title. A local timer may run `refresh-names` to reapply the
+current title after restarts or provider drift; this does not consume an
+automatic rename. When the objective materially changes, use exactly one
+`rename --automatic --major-intent-change` so future refreshes carry the new
+task, not a transient substep.
 
 ## Capture evidence
 
@@ -63,6 +67,19 @@ sarathi --profile work capture <task-id> result \
 Never place raw messages, email bodies, calendar descriptions, transcripts,
 terminal output, credentials, source code, or unredacted commands in the
 summary. Source references should be opaque locators or approved links.
+
+## Share context
+
+When another agent or session needs compact derived state, publish it with
+`smriti_context_publish` under a stable topic. Use `issue`, `fix`, or
+`workaround` for diagnostic history and `request`/`result` for correlated work
+messages. Consumers call `smriti_context_consume` with their stable consumer
+ID, incorporate or promote the message, then call `smriti_context_ack`.
+
+Reading is non-destructive and acknowledgements are per consumer. Never
+acknowledge before the content has been handled. A context `request` is not
+approval to execute an external action, and the same no-raw-content rules used
+for evidence and handoffs apply to every context message.
 
 ## Hand off
 
@@ -85,6 +102,15 @@ through `sarathi --profile <profile> complete` in the same workflow. Provide:
 Sarathi refuses completion without both approach and result, writes
 `.sarathi/resolution.md`, appends the structured evidence event, and syncs or
 queues it for the selected Smriti profile atomically with the `done` state.
+
+Before completing substantive work, help the user think through a compact
+postmortem: what changed, why the chosen approach worked, the key trade-off or
+failure mode, measurable impact, and what to repeat or change next time. Ask
+only for details that cannot be derived safely. Capture the result through
+`complete` immediately; do not defer reconstruction to the end of the week.
+For interview-worthy work, call out missing Situation, Task, Action, or Result
+detail so the owner can promote it in Smriti's private interview vault. Never
+invent metrics or claim impact that the evidence does not support.
 
 ## Respect boundaries
 

@@ -40,6 +40,59 @@ TOOLS = [
         },
         "annotations": {"readOnlyHint": False, "destructiveHint": False},
     },
+    {
+        "name": "smriti_context_publish",
+        "description": "Publish compact derived context for other agents; never include raw messages, transcripts, credentials, commands, or source code.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "producer_id": {"type": "string"},
+                "topic": {"type": "string"},
+                "kind": {"type": "string", "enum": ["context", "issue", "fix", "workaround", "decision", "handoff", "request", "result"]},
+                "summary": {"type": "string"},
+                "task_id": {"type": "string"},
+                "correlation_id": {"type": "string"},
+                "in_reply_to": {"type": "string"},
+                "facts": {"type": "array", "items": {"type": "string"}},
+                "next_actions": {"type": "array", "items": {"type": "string"}},
+                "tags": {"type": "array", "items": {"type": "string"}},
+                "source_refs": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["producer_id", "topic", "kind", "summary"],
+        },
+        "annotations": {"readOnlyHint": False, "destructiveHint": False},
+    },
+    {
+        "name": "smriti_context_consume",
+        "description": "Read this consumer's unacknowledged derived context messages in oldest-first order.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "consumer_id": {"type": "string"},
+                "topic": {"type": "string"},
+                "kinds": {"type": "array", "items": {"type": "string"}},
+                "task_id": {"type": "string"},
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200},
+            },
+            "required": ["consumer_id"],
+        },
+        "annotations": {"readOnlyHint": True},
+    },
+    {
+        "name": "smriti_context_ack",
+        "description": "Acknowledge or ignore one context message for one consumer after it has been handled.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "message_id": {"type": "string"},
+                "consumer_id": {"type": "string"},
+                "status": {"type": "string", "enum": ["acknowledged", "ignored"]},
+                "note": {"type": "string"},
+            },
+            "required": ["message_id", "consumer_id"],
+        },
+        "annotations": {"readOnlyHint": False, "destructiveHint": False},
+    },
 ]
 
 
@@ -77,6 +130,23 @@ def handle(message: dict[str, Any], client: SmritiClient | None) -> dict[str, An
         value = client.capture_evidence({**args, "redaction_state": "derived-no-raw-content", "provenance": {"producer": "sarathi-mcp"}})
     elif name == "smriti_handoff_put":
         value = client.put_handoff(args["task_id"], {"summary": args["summary"], "next": args.get("next", [])})
+    elif name == "smriti_context_publish":
+        value = client.publish_context(args)
+    elif name == "smriti_context_consume":
+        value = client.consume_context(
+            consumer_id=args["consumer_id"],
+            topic=args.get("topic"),
+            kinds=args.get("kinds"),
+            task_id=args.get("task_id"),
+            limit=args.get("limit", 50),
+        )
+    elif name == "smriti_context_ack":
+        value = client.acknowledge_context(
+            args["message_id"],
+            consumer_id=args["consumer_id"],
+            status=args.get("status", "acknowledged"),
+            note=args.get("note"),
+        )
     else:
         return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "unknown tool"}}
     return {"jsonrpc": "2.0", "id": request_id, "result": _result(value)}
