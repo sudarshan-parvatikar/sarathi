@@ -30,6 +30,8 @@ optional private Smriti instance.
   permanently bound to one profile and cross-profile reuse is rejected.
 - Linux systemd-user and macOS LaunchAgent definitions are included but are not
   installed or enabled automatically.
+- The optional `sarathi-smriti-sync.timer` retries Work task and evidence
+  outboxes every five minutes; it never redirects Personal or Neutral state.
 - Optional Bash/Zsh helpers include `sr`, `srp`, `srw`, `srn`, role functions,
   `sarathi_here`, and `sarathi_done`. They reuse the canonical CLI; source
   `integrations/shell/sarathi.sh` only if those names do not conflict.

@@ -1,0 +1,28 @@
+{
+  "repository": "sarathi",
+  "target": "main",
+  "base": "f80491b4dbac44ddb869cc52a1ff7997bbdff94b",
+  "branch": "candidate/codex/automatic-smriti-retry-20260918",
+  "hash": "63c4c60dd3bcfd1eae71df04f1e79c041fd3c2f7",
+  "owned_files": [
+    "BOOTSTRAP.md",
+    "README.md",
+    "services/systemd/sarathi-smriti-sync.service",
+    "services/systemd/sarathi-smriti-sync.timer",
+    "tests/test_sarathi.py"
+  ],
+  "checks": [
+    "18 unittest tests passed",
+    "Python compileall passed",
+    "systemd user units verified",
+    "git diff and secret-pattern checks passed"
+  ],
+  "dependencies": [
+    "a reachable Work Smriti instance at the configured machine-local endpoint"
+  ],
+  "risks": [],
+  "no_secrets": true,
+  "agent_name": "Codex",
+  "agent_model": "GPT-5",
+  "recorded_at": "2026-09-18T01:58:00+05:30"
+}
