@@ -83,6 +83,14 @@ with `scripts/agent-host-bootstrap --dry-run`; add `--apply` only after
 reviewing the package-manager plan. Service clients are opt-in and the script
 does not enable daemons or create credentials.
 
+To retry Work task/evidence outboxes automatically on Linux, install the two
+`services/systemd/sarathi-smriti-sync.*` files in
+`~/.config/systemd/user/`, run `systemctl --user daemon-reload`, and enable
+`sarathi-smriti-sync.timer`. The checked-in service targets only the local
+Work Smriti endpoint. If authentication is enabled later, put only
+`SMRITI_WORK_URL` and `SMRITI_WORK_TOKEN` in the machine-local
+`~/.config/sarathi/work-smriti.env`; never commit that file.
+
 ## 6. Prove idempotence
 
 Run the same dry-run again. Success is zero proposed mutations and all

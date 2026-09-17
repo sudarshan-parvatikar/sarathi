@@ -319,6 +319,17 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual("./plugins/sarathi", codex_marketplace["plugins"][0]["source"]["path"])
         self.assertEqual("./plugins/sarathi", claude_marketplace["plugins"][0]["source"])
 
+    def test_work_smriti_retry_timer_is_profile_bound_and_opt_in(self) -> None:
+        root = Path(__file__).parents[1]
+        service = (root / "services" / "systemd" / "sarathi-smriti-sync.service").read_text()
+        timer = (root / "services" / "systemd" / "sarathi-smriti-sync.timer").read_text()
+        self.assertIn("--profile work sync", service)
+        self.assertIn("SMRITI_WORK_URL=http://127.0.0.1:8000", service)
+        self.assertNotIn("--profile personal", service)
+        self.assertNotIn("--profile neutral", service)
+        self.assertIn("OnUnitActiveSec=5min", timer)
+        self.assertIn("WantedBy=timers.target", timer)
+
 
 if __name__ == "__main__":
     unittest.main()

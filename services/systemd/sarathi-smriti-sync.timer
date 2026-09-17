@@ -1,0 +1,12 @@
+[Unit]
+Description=Periodically retry pending Work Sarathi state into Smriti
+
+[Timer]
+OnBootSec=4min
+OnUnitActiveSec=5min
+AccuracySec=30s
+RandomizedDelaySec=20s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

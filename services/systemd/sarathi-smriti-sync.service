@@ -1,0 +1,13 @@
+[Unit]
+Description=Retry pending Work Sarathi state into Smriti
+Documentation=https://github.com/sudarshan-parvatikar/sarathi/blob/main/BOOTSTRAP.md
+Wants=smriti-work.service
+After=smriti-work.service
+
+[Service]
+Type=oneshot
+Environment=SMRITI_WORK_URL=http://127.0.0.1:8000
+EnvironmentFile=-%h/.config/sarathi/work-smriti.env
+ExecStart=%h/.local/bin/sarathi --profile work sync
+NoNewPrivileges=true
+PrivateTmp=true
