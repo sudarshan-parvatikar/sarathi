@@ -26,11 +26,21 @@ def parser() -> argparse.ArgumentParser:
     profile_cmd = sub.add_parser("profile", help="show the selected isolated context")
     profile_cmd.add_argument("--json", action="store_true")
 
-    open_cmd = sub.add_parser("open", help="create or focus a task workspace")
+    open_cmd = sub.add_parser("open", help="create or reuse a task workspace")
     open_cmd.add_argument("workspace", nargs="?", default=".")
     open_cmd.add_argument("--intent", default="")
     open_cmd.add_argument("--agent", choices=("claude", "codex", "agy"))
-    open_cmd.add_argument("--no-emacs", action="store_true")
+    open_ui = open_cmd.add_mutually_exclusive_group()
+    open_ui.add_argument(
+        "--emacs",
+        action="store_true",
+        help="explicitly open or focus the task in Emacs",
+    )
+    open_ui.add_argument(
+        "--no-emacs",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     open_cmd.add_argument("--json", action="store_true")
 
     list_cmd = sub.add_parser("list", help="list registered tasks")
@@ -78,8 +88,18 @@ def parser() -> argparse.ArgumentParser:
     complete_cmd.add_argument("--learning", action="append", default=[])
     complete_cmd.add_argument("--link", action="append", default=[])
 
-    restore_cmd = sub.add_parser("restore", help="recreate Emacs task workspaces after restart")
-    restore_cmd.add_argument("--no-emacs", action="store_true")
+    restore_cmd = sub.add_parser("restore", help="sync registered tasks after restart")
+    restore_ui = restore_cmd.add_mutually_exclusive_group()
+    restore_ui.add_argument(
+        "--emacs",
+        action="store_true",
+        help="explicitly recreate the registered task frames in Emacs",
+    )
+    restore_ui.add_argument(
+        "--no-emacs",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
 
     sync_cmd = sub.add_parser("sync", help="retry durable Smriti task and evidence outboxes")
     sync_cmd.add_argument("task_id", nargs="?")
@@ -103,7 +123,7 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(payload, indent=2, sort_keys=True) if args.json else profile)
         elif args.command == "open":
             task = controller.create_task(Path(args.workspace), args.intent)
-            if not args.no_emacs:
+            if args.emacs:
                 controller.open_emacs(task, agent=args.agent)
             print(_task_json(task) if args.json else f"{task.id}\t{task.title}\t{task.workspace}")
         elif args.command == "list":
@@ -162,7 +182,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "restore":
             tasks = controller.registry.list()
             controller.sync_pending()
-            if not args.no_emacs:
+            if args.emacs:
                 for task in reversed(tasks):
                     controller.open_emacs(task)
             print(json.dumps({"restored": len(tasks)}))

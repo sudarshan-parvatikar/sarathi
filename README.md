@@ -8,7 +8,8 @@ optional private Smriti instance.
 
 ## What works in this foundation
 
-- `sarathi open` starts or focuses a named Emacs daemon and returns immediately.
+- `sarathi open` creates or reuses the durable task headlessly. Add `--emacs`
+  only when an Emacs frame is explicitly wanted.
 - Every task has an immutable UUID and a three-to-six-word mutable title.
 - Titles propagate to Emacs, registered agent sessions, and Smriti. Codex names
   are updated through the documented `thread/name/set` app-server method;
@@ -63,6 +64,7 @@ Select the context explicitly when it is not the machine default:
 sarathi --profile personal open ~/workspace/my-project --intent "Fix release notes"
 sarathi --profile work open ~/work/approved-project --intent "Investigate build failure"
 sarathi --profile neutral profile --json
+sarathi --profile neutral open ~/workspace/my-project --intent "Inspect in Emacs" --emacs
 ```
 
 The bootstrap identity becomes the installed wrapper's default, while

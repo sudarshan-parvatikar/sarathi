@@ -7,9 +7,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from sarathi.adapters import UNSAFE_FLAGS, build_launch_plan
+from sarathi.cli import main
 from sarathi.controller import Controller, RenameLimitError
 from sarathi.registry import Registry
 from sarathi.smriti_client import SmritiClient
@@ -54,6 +56,38 @@ class FakeSmriti:
         value = {"message_id": message_id, **receipt}
         self.receipts.append(value)
         return value
+
+
+class CliTests(unittest.TestCase):
+    @patch("sarathi.cli.Controller")
+    def test_open_is_headless_by_default(self, controller_type) -> None:
+        controller = controller_type.return_value
+        controller.create_task.return_value = SimpleNamespace(
+            id="task-1",
+            title="Headless task",
+            workspace="/tmp/project",
+        )
+
+        self.assertEqual(0, main(["--profile", "neutral", "open", "/tmp/project"]))
+
+        controller.open_emacs.assert_not_called()
+
+    @patch("sarathi.cli.Controller")
+    def test_open_launches_emacs_only_when_explicit(self, controller_type) -> None:
+        controller = controller_type.return_value
+        task = SimpleNamespace(
+            id="task-1",
+            title="Visible task",
+            workspace="/tmp/project",
+        )
+        controller.create_task.return_value = task
+
+        self.assertEqual(
+            0,
+            main(["--profile", "neutral", "open", "/tmp/project", "--emacs"]),
+        )
+
+        controller.open_emacs.assert_called_once_with(task, agent=None)
 
 
 class FailingSmriti(FakeSmriti):

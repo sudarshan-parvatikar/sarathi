@@ -25,6 +25,8 @@ rejects a workspace already owned by another profile.
 
 1. Confirm the workspace path and run
    `sarathi --profile <profile> open <path> --intent "<intent>"`.
+   This is headless by default. Add `--emacs` only when the operator explicitly
+   asks to open or focus an Emacs frame.
 2. Reuse the returned task ID. Never create a second task because its title
    changed.
 3. Launch through
